@@ -6,9 +6,8 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiogram.enums import ParseMode
 from aiogram.filters import Command
 
 # --- Конфиг ---
@@ -17,30 +16,38 @@ API_BASE = os.getenv("API_BASE", "https://misugram.cloud-ip.cc")
 
 # --- Подключение к шлюзу ---
 session = AiohttpSession(api=TelegramAPIServer.from_base(API_BASE))
-bot = Bot(token=BOT_TOKEN, session=session, parse_mode=ParseMode.HTML)
+bot = Bot(token=BOT_TOKEN, session=session)
 dp = Dispatcher()
+
+# --- Кнопка для копирования ---
+def get_copy_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    # Кнопка copy_text автоматически отправляет текст в буфер обмена
+    button = InlineKeyboardButton(
+        text="📋 Скопировать ID",
+        copy_text={"text": str(user_id)}
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 # --- Команда /start ---
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_id = message.from_user.id
-    # Тег <code> делает текст копируемым в один клик
-    text = (
+    await message.answer(
         f"Привет, {message.from_user.first_name}! 👋\n\n"
-        f"Твой ID (нажми, чтобы скопировать):\n"
-        f"<code>{user_id}</code>"
+        f"Твой ID: {user_id}",
+        reply_markup=get_copy_keyboard(user_id)
     )
-    await message.answer(text)
 
-# --- Ответ на любой текст (тоже с копированием) ---
+# --- Ответ на любой текст ---
 @dp.message(F.text)
 async def handle_text(message: Message):
     user_id = message.from_user.id
     await message.reply(
-        f"Твой ID:\n<code>{user_id}</code>"
+        f"Твой ID: {user_id}",
+        reply_markup=get_copy_keyboard(user_id)
     )
 
-# --- Веб-сервер для Render ---
+# --- Веб-сервер для Render (aiohttp) ---
 async def health(request):
     return web.Response(text="Bot is running")
 
@@ -55,13 +62,11 @@ async def main():
     logging.basicConfig(level=logging.INFO)
     
     app = web.Application()
-    
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
     
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=f"/{BOT_TOKEN}")
     setup_application(app, dp, bot=bot)
-    
     dp.startup.register(on_startup)
     
     port = int(os.environ.get("PORT", 10000))
